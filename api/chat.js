@@ -121,7 +121,8 @@ async function handler(req, res) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        "Authorization": `Bearer ${apiKey}`,
+        "OpenAI-Beta": "assistants=v2",
       },
       body: JSON.stringify({
         role: "user",
@@ -138,7 +139,8 @@ async function handler(req, res) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        "Authorization": `Bearer ${apiKey}`,
+        "OpenAI-Beta": "assistants=v2",
       },
       body: JSON.stringify({
         assistant_id: assistantId,
@@ -162,10 +164,10 @@ async function handler(req, res) {
 
     const messagesResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
       method: "GET",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
+       headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "OpenAI-Beta": "assistants=v2",
+      }
     });
 
     if (!messagesResponse.ok) {
