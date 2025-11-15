@@ -1,17 +1,20 @@
-import withCors from './_cors.js';
+import withCors from "./_cors.js";
 
-async function handler(req, res) {
-  if (req.method !== 'POST') {
-    res.status(405).json({ ok: false, error: 'Method not allowed' });
-    return;
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
+function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ ok: false, error: "Method Not Allowed" });
   }
 
-  const timestamp = Date.now();
-
-  res.status(200).json({
+  return res.status(200).json({
     ok: true,
-    threadId: `test-thread-${timestamp}`,
-    message: 'Session created successfully!'
+    threadId: `thread-${Date.now()}`,
+    message: "Session started",
   });
 }
 

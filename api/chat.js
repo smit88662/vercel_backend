@@ -6,52 +6,72 @@ export const config = {
   },
 };
 
+function readRequestBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on("data", chunk => chunks.push(chunk));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+
 async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ ok: false, error: "Method Not Allowed" });
   }
 
+  let rawBody;
   try {
-    // Manually read JSON body
-    let body = "";
-    await new Promise(resolve => {
-      req.on("data", chunk => (body += chunk));
-      req.on("end", resolve);
-    });
+    rawBody = await readRequestBody(req);
+  } catch (error) {
+    return res.status(400).json({ ok: false, error: "Invalid request body", details: error.message });
+  }
 
-    const { message } = JSON.parse(body || "{}");
+  let message;
+  try {
+    ({ message } = JSON.parse(rawBody || "{}"));
+  } catch (error) {
+    return res.status(400).json({ ok: false, error: "Body must be valid JSON", details: error.message });
+  }
 
-    if (!message) {
-      return res.status(400).json({ ok: false, error: "Message is required" });
-    }
+  if (typeof message !== "string" || !message.trim()) {
+    return res.status(400).json({ ok: false, error: "Message is required" });
+  }
 
-    // Call OpenAI
-    const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ ok: false, error: "OPENAI_API_KEY is not configured" });
+  }
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
         messages: [
           { role: "system", content: "You are a helpful AI assistant." },
-          { role: "user", content: message }
-        ]
+          { role: "user", content: message },
+        ],
       }),
     });
 
-    const data = await aiRes.json();
-    const reply = data?.choices?.[0]?.message?.content || "No response from OpenAI";
+    if (!response.ok) {
+      const errorPayload = await response.text();
+      return res.status(response.status).json({ ok: false, error: "OpenAI API error", details: errorPayload });
+    }
+
+    const data = await response.json();
+    const reply = data?.choices?.[0]?.message?.content?.trim() || "AI generated response here";
 
     return res.status(200).json({ ok: true, reply });
-
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ ok: false, error: "Internal error" });
+    return res.status(500).json({ ok: false, error: "Failed to reach OpenAI", details: error.message });
   }
 }
 
-// IMPORTANT: Wrap handler with CORS
 export default withCors(handler);
 

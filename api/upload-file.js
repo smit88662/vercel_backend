@@ -1,20 +1,19 @@
-import withCors from './_cors.js';
+import withCors from "./_cors.js";
 
 export const config = {
   api: {
-    bodyParser: false
-  }
+    bodyParser: false,
+  },
 };
 
-async function handler(req, res) {
-  if (req.method !== 'POST') {
-    res.status(405).json({ ok: false, error: 'Method not allowed' });
-    return;
+function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ ok: false, error: "Method Not Allowed" });
   }
 
-  res.status(200).json({
+  return res.status(200).json({
     ok: true,
-    message: 'File upload endpoint works (dummy)'
+    message: "File upload working",
   });
 }
 
