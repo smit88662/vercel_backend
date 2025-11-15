@@ -75,7 +75,7 @@ async function handler(req, res) {
         "Authorization": `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "openai/gpt-4o-mini",
         messages: [
           { role: "system", content: "You are a helpful AI assistant." },
           { role: "user", content: message },
