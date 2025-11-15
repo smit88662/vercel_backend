@@ -1,30 +1,51 @@
 import { cors } from "./_cors.js";
-import fetch from "node-fetch";
+
+export const config = {
+  api: {
+    bodyParser: false, // Required to manually parse JSON for OPTIONS + CORS
+  },
+};
 
 export default async function handler(req, res) {
-  cors(res);
+  cors(res); // Always apply CORS
 
+  // Handle preflight OPTIONS request
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
 
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return res.status(405).json({
+      ok: false,
+      error: "Method Not Allowed",
+    });
   }
 
   try {
-    const { message } = req.body ? JSON.parse(req.body) : {};
+    // Manually read body because bodyParser=false
+    let body = "";
+    await new Promise(resolve => {
+      req.on("data", chunk => {
+        body += chunk;
+      });
+      req.on("end", resolve);
+    });
+
+    const { message } = JSON.parse(body || "{}");
 
     if (!message) {
-      return res.status(400).json({ error: "Message is required" });
+      return res.status(400).json({
+        ok: false,
+        error: "Message is required",
+      });
     }
 
-    // Real OpenAI call
-    const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    // Call OpenAI
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
@@ -35,27 +56,22 @@ export default async function handler(req, res) {
       }),
     });
 
-    const data = await openaiRes.json();
+    const data = await response.json();
 
-    const aiResponse = data.choices?.[0]?.message?.content || "No response from OpenAI";
+    const reply =
+      data?.choices?.[0]?.message?.content || "No response from OpenAI.";
 
     return res.status(200).json({
       ok: true,
-      reply: aiResponse
+      reply,
     });
 
-  } catch (err) {
-    console.error("AI Error:", err);
+  } catch (error) {
+    console.error("Chat error:", error);
     return res.status(500).json({
       ok: false,
-      error: "OpenAI request failed"
+      error: "Failed to process chat"
     });
   }
 }
-
-export const config = {
-  api: {
-    bodyParser: true,
-  },
-};
 
