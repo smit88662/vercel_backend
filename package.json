@@ -2,5 +2,6 @@
   "name": "vercel-backend-test",
   "version": "1.0.0",
   "description": "Minimal backend test for Vercel",
-  "private": true
+  "private": true,
+  "type": "module"
 }

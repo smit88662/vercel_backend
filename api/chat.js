@@ -1,5 +1,9 @@
 import withCors from "./_cors.js";
 
+const sessions = globalThis.__OPENAI_THREAD_SESSIONS__
+  ? globalThis.__OPENAI_THREAD_SESSIONS__
+  : (globalThis.__OPENAI_THREAD_SESSIONS__ = {});
+
 export const config = {
   api: {
     bodyParser: false,
@@ -15,9 +19,71 @@ function readRequestBody(req) {
   });
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function pollRunStatus(threadId, runId, apiKey, attempt = 0) {
+  const response = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs/${runId}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    const errorPayload = await response.text();
+    throw new Error(`Run status error: ${errorPayload}`);
+  }
+
+  const run = await response.json();
+
+  if (run.status === "completed") {
+    return run;
+  }
+
+  if (["failed", "cancelled", "expired"].includes(run.status)) {
+    throw new Error(`Run ${run.status}`);
+  }
+
+  if (attempt > 30) {
+    throw new Error("Run polling timeout");
+  }
+
+  await sleep(1000);
+  return pollRunStatus(threadId, runId, apiKey, attempt + 1);
+}
+
+function extractAssistantReply(messages) {
+  for (const message of messages.data) {
+    if (message.role === "assistant") {
+      const parts = message.content
+        ?.filter(part => part.type === "text" && part.text?.value)
+        .map(part => part.text.value.trim()) || [];
+      const text = parts.join("\n").trim();
+      if (text) {
+        return text;
+      }
+    }
+  }
+  return "AI generated response here";
+}
+
 async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ ok: false, error: "Method Not Allowed" });
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  const assistantId = process.env.OPENAI_ASSISTANT_ID;
+
+  if (!apiKey) {
+    return res.status(500).json({ ok: false, error: "OPENAI_API_KEY is not configured" });
+  }
+
+  if (!assistantId) {
+    return res.status(500).json({ ok: false, error: "OPENAI_ASSISTANT_ID is not configured" });
   }
 
   let rawBody;
@@ -27,49 +93,92 @@ async function handler(req, res) {
     return res.status(400).json({ ok: false, error: "Invalid request body", details: error.message });
   }
 
+  let mobile;
   let message;
   try {
-    ({ message } = JSON.parse(rawBody || "{}"));
+    ({ mobile, message } = JSON.parse(rawBody || "{}"));
   } catch (error) {
     return res.status(400).json({ ok: false, error: "Body must be valid JSON", details: error.message });
+  }
+
+  if (typeof mobile !== "string" || !mobile.trim()) {
+    return res.status(400).json({ ok: false, error: "Mobile number is required" });
   }
 
   if (typeof message !== "string" || !message.trim()) {
     return res.status(400).json({ ok: false, error: "Message is required" });
   }
 
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ ok: false, error: "OPENAI_API_KEY is not configured" });
+  const normalizedMobile = mobile.trim();
+  const threadId = sessions[normalizedMobile];
+
+  if (!threadId) {
+    return res.status(404).json({ ok: false, error: "Session not found" });
   }
 
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const messageResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: "You are a helpful AI assistant." },
-          { role: "user", content: message },
-        ],
+        role: "user",
+        content: message,
       }),
     });
 
-    if (!response.ok) {
-      const errorPayload = await response.text();
-      return res.status(response.status).json({ ok: false, error: "OpenAI API error", details: errorPayload });
+    if (!messageResponse.ok) {
+      const errorPayload = await messageResponse.text();
+      return res.status(messageResponse.status).json({ ok: false, error: "Failed to append message", details: errorPayload });
     }
 
-    const data = await response.json();
-    const reply = data?.choices?.[0]?.message?.content?.trim() || "AI generated response here";
+    const runResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        assistant_id: assistantId,
+        model: "gpt-4o-mini",
+      }),
+    });
+
+    if (!runResponse.ok) {
+      const errorPayload = await runResponse.text();
+      return res.status(runResponse.status).json({ ok: false, error: "Failed to start run", details: errorPayload });
+    }
+
+    const runData = await runResponse.json();
+    const runId = runData?.id;
+
+    if (!runId) {
+      return res.status(500).json({ ok: false, error: "Run ID missing" });
+    }
+
+    await pollRunStatus(threadId, runId, apiKey);
+
+    const messagesResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!messagesResponse.ok) {
+      const errorPayload = await messagesResponse.text();
+      return res.status(messagesResponse.status).json({ ok: false, error: "Failed to fetch messages", details: errorPayload });
+    }
+
+    const messages = await messagesResponse.json();
+    const reply = extractAssistantReply(messages);
 
     return res.status(200).json({ ok: true, reply });
   } catch (error) {
-    return res.status(500).json({ ok: false, error: "Failed to reach OpenAI", details: error.message });
+    return res.status(500).json({ ok: false, error: "Assistant run failed", details: error.message });
   }
 }
 
