@@ -31,7 +31,7 @@ async function handler(req, res) {
     return res.status(405).json({ ok: false, error: "Method Not Allowed" });
   }
 
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.VERCEL_AI_API_KEY;
   if (!apiKey) {
     return res.status(500).json({ ok: false, error: "OPENAI_API_KEY is not configured" });
   }
@@ -68,7 +68,7 @@ async function handler(req, res) {
   //  USE CHAT COMPLETIONS API
   // -------------------------------
   try {
-    const completion = await fetch("https://api.openai.com/v1/chat/completions", {
+    const completion = await fetch("https://api.ai.vercel.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
