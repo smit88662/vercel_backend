@@ -25,9 +25,11 @@ async function handler(req, res) {
   }
 
   const apiKey = process.env.OPENAI_API_KEY;
+  /*
   if (!apiKey) {
     return res.status(500).json({ ok: false, error: "OPENAI_API_KEY is not configured" });
   }
+  */
 
   let rawBody;
   try {
@@ -56,6 +58,10 @@ async function handler(req, res) {
     });
   }
 
+  const threadId = `thread_${Date.now()}`;
+  sessions[normalizedMobile] = threadId;
+
+  /*
   try {
     const response = await fetch("https://api.openai.com/v1/threads", {
       method: "POST",
@@ -89,6 +95,13 @@ async function handler(req, res) {
   } catch (error) {
     return res.status(500).json({ ok: false, error: "Failed to create thread", details: error.message });
   }
+  */
+
+  return res.status(200).json({
+    ok: true,
+    threadId,
+    message: "Session started",
+  });
 }
 
 export default withCors(handler);

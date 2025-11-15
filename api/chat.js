@@ -19,6 +19,7 @@ function readRequestBody(req) {
   });
 }
 
+/*
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -69,6 +70,7 @@ function extractAssistantReply(messages) {
   }
   return "AI generated response here";
 }
+*/
 
 async function handler(req, res) {
   if (req.method !== "POST") {
@@ -76,15 +78,19 @@ async function handler(req, res) {
   }
 
   const apiKey = process.env.OPENAI_API_KEY;
+  /*
   const assistantId = process.env.OPENAI_ASSISTANT_ID;
+  */
 
   if (!apiKey) {
     return res.status(500).json({ ok: false, error: "OPENAI_API_KEY is not configured" });
   }
 
+  /*
   if (!assistantId) {
     return res.status(500).json({ ok: false, error: "OPENAI_ASSISTANT_ID is not configured" });
   }
+  */
 
   let rawBody;
   try {
@@ -117,6 +123,35 @@ async function handler(req, res) {
   }
 
   try {
+    const completion = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "You are a helpful AI assistant." },
+          { role: "user", content: message },
+        ],
+      }),
+    });
+
+    if (!completion.ok) {
+      const errorPayload = await completion.text();
+      return res.status(completion.status).json({ ok: false, error: "OpenAI chat completion failed", details: errorPayload });
+    }
+
+    const json = await completion.json();
+    const reply = json.choices?.[0]?.message?.content || "No response";
+
+    return res.status(200).json({
+      ok: true,
+      reply,
+    });
+
+    /*
     const messageResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
       method: "POST",
       headers: {
@@ -179,8 +214,9 @@ async function handler(req, res) {
     const reply = extractAssistantReply(messages);
 
     return res.status(200).json({ ok: true, reply });
+    */
   } catch (error) {
-    return res.status(500).json({ ok: false, error: "Assistant run failed", details: error.message });
+    return res.status(500).json({ ok: false, error: "Chat completion failed", details: error.message });
   }
 }
 
