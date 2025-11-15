@@ -1,12 +1,8 @@
 import withCors from "./_cors.js";
 
-const sessions = globalThis.__OPENAI_THREAD_SESSIONS__
-  ? globalThis.__OPENAI_THREAD_SESSIONS__
-  : (globalThis.__OPENAI_THREAD_SESSIONS__ = {});
-
 export const config = {
   api: {
-    bodyParser: false,
+    bodyParser: false, // we manually parse the body
   },
 };
 
@@ -19,57 +15,15 @@ function readRequestBody(req) {
   });
 }
 
-/*
+/* -------------------------------
+   THREADS API CODE (Commented Out)
+----------------------------------
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function pollRunStatus(threadId, runId, apiKey, attempt = 0) {
-  const response = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs/${runId}`, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    const errorPayload = await response.text();
-    throw new Error(`Run status error: ${errorPayload}`);
-  }
-
-  const run = await response.json();
-
-  if (run.status === "completed") {
-    return run;
-  }
-
-  if (["failed", "cancelled", "expired"].includes(run.status)) {
-    throw new Error(`Run ${run.status}`);
-  }
-
-  if (attempt > 30) {
-    throw new Error("Run polling timeout");
-  }
-
-  await sleep(1000);
-  return pollRunStatus(threadId, runId, apiKey, attempt + 1);
-}
-
-function extractAssistantReply(messages) {
-  for (const message of messages.data) {
-    if (message.role === "assistant") {
-      const parts = message.content
-        ?.filter(part => part.type === "text" && part.text?.value)
-        .map(part => part.text.value.trim()) || [];
-      const text = parts.join("\n").trim();
-      if (text) {
-        return text;
-      }
-    }
-  }
-  return "AI generated response here";
-}
+// ... all your previous Threads API code ...
 */
 
 async function handler(req, res) {
@@ -78,20 +32,11 @@ async function handler(req, res) {
   }
 
   const apiKey = process.env.OPENAI_API_KEY;
-  /*
-  const assistantId = process.env.OPENAI_ASSISTANT_ID;
-  */
-
   if (!apiKey) {
     return res.status(500).json({ ok: false, error: "OPENAI_API_KEY is not configured" });
   }
 
-  /*
-  if (!assistantId) {
-    return res.status(500).json({ ok: false, error: "OPENAI_ASSISTANT_ID is not configured" });
-  }
-  */
-
+  // Read raw request body
   let rawBody;
   try {
     rawBody = await readRequestBody(req);
@@ -99,22 +44,29 @@ async function handler(req, res) {
     return res.status(400).json({ ok: false, error: "Invalid request body", details: error.message });
   }
 
+  // Extract threadId + message (NO more mobile!)
   let threadId;
   let message;
+
   try {
     ({ threadId, message } = JSON.parse(rawBody || "{}"));
   } catch (error) {
     return res.status(400).json({ ok: false, error: "Body must be valid JSON", details: error.message });
   }
 
+  // Validate message
   if (typeof message !== "string" || !message.trim()) {
     return res.status(400).json({ ok: false, error: "Message is required" });
   }
 
+  // Validate threadId
   if (typeof threadId !== "string" || !threadId.trim()) {
     return res.status(400).json({ ok: false, error: "Thread ID required" });
   }
 
+  // -------------------------------
+  //  USE CHAT COMPLETIONS API
+  // -------------------------------
   try {
     const completion = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -133,7 +85,11 @@ async function handler(req, res) {
 
     if (!completion.ok) {
       const errorPayload = await completion.text();
-      return res.status(completion.status).json({ ok: false, error: "OpenAI chat completion failed", details: errorPayload });
+      return res.status(completion.status).json({
+        ok: false,
+        error: "OpenAI chat completion failed",
+        details: errorPayload,
+      });
     }
 
     const json = await completion.json();
@@ -144,72 +100,12 @@ async function handler(req, res) {
       reply,
     });
 
-    /*
-    const messageResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-        "OpenAI-Beta": "assistants=v2",
-      },
-      body: JSON.stringify({
-        role: "user",
-        content: message,
-      }),
-    });
-
-    if (!messageResponse.ok) {
-      const errorPayload = await messageResponse.text();
-      return res.status(messageResponse.status).json({ ok: false, error: "Failed to append message", details: errorPayload });
-    }
-
-    const runResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-        "OpenAI-Beta": "assistants=v2",
-      },
-      body: JSON.stringify({
-        assistant_id: assistantId,
-        model: "gpt-4o-mini",
-      }),
-    });
-
-    if (!runResponse.ok) {
-      const errorPayload = await runResponse.text();
-      return res.status(runResponse.status).json({ ok: false, error: "Failed to start run", details: errorPayload });
-    }
-
-    const runData = await runResponse.json();
-    const runId = runData?.id;
-
-    if (!runId) {
-      return res.status(500).json({ ok: false, error: "Run ID missing" });
-    }
-
-    await pollRunStatus(threadId, runId, apiKey);
-
-    const messagesResponse = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
-      method: "GET",
-       headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "OpenAI-Beta": "assistants=v2",
-      }
-    });
-
-    if (!messagesResponse.ok) {
-      const errorPayload = await messagesResponse.text();
-      return res.status(messagesResponse.status).json({ ok: false, error: "Failed to fetch messages", details: errorPayload });
-    }
-
-    const messages = await messagesResponse.json();
-    const reply = extractAssistantReply(messages);
-
-    return res.status(200).json({ ok: true, reply });
-    */
   } catch (error) {
-    return res.status(500).json({ ok: false, error: "Chat completion failed", details: error.message });
+    return res.status(500).json({
+      ok: false,
+      error: "Chat completion failed",
+      details: error.message,
+    });
   }
 }
 
