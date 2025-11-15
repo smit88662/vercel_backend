@@ -99,27 +99,20 @@ async function handler(req, res) {
     return res.status(400).json({ ok: false, error: "Invalid request body", details: error.message });
   }
 
-  let mobile;
+  let threadId;
   let message;
   try {
-    ({ mobile, message } = JSON.parse(rawBody || "{}"));
+    ({ threadId, message } = JSON.parse(rawBody || "{}"));
   } catch (error) {
     return res.status(400).json({ ok: false, error: "Body must be valid JSON", details: error.message });
-  }
-
-  if (typeof mobile !== "string" || !mobile.trim()) {
-    return res.status(400).json({ ok: false, error: "Mobile number is required" });
   }
 
   if (typeof message !== "string" || !message.trim()) {
     return res.status(400).json({ ok: false, error: "Message is required" });
   }
 
-  const normalizedMobile = mobile.trim();
-  const threadId = sessions[normalizedMobile];
-
-  if (!threadId) {
-    return res.status(404).json({ ok: false, error: "Session not found" });
+  if (typeof threadId !== "string" || !threadId.trim()) {
+    return res.status(400).json({ ok: false, error: "Thread ID required" });
   }
 
   try {
