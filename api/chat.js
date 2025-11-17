@@ -1,5 +1,7 @@
 import withCors from "./_cors.js";
 
+//
+
 export const config = {
   api: {
     bodyParser: false, // we manually parse the body
@@ -75,7 +77,7 @@ async function handler(req, res) {
         "Authorization": `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "gpt-5-mini",
         messages: [
           { role: "system", content: "You are a helpful AI assistant." },
           { role: "user", content: message },
